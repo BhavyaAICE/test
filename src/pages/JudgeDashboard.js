@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { decodeJudgeData } from '../utils/judgeDataEncoder';
 import {
   Box,
   Typography,
@@ -21,7 +22,9 @@ import { AssignmentInd, CheckCircle, HourglassEmpty } from '@mui/icons-material'
 
 function JudgeDashboard() {
   const [searchParams] = useSearchParams();
+  const encodedData = searchParams.get('data');
   const token = searchParams.get('token');
+  const eventId = searchParams.get('eventId');
 
   const [judge, setJudge] = useState(null);
   const [assignedTeams, setAssignedTeams] = useState([]);
@@ -32,39 +35,65 @@ function JudgeDashboard() {
   const [submittedTeams, setSubmittedTeams] = useState(new Set());
 
   useEffect(() => {
-    if (!token) {
-      setError('No access token provided. Please use the link from your invitation email.');
+    if (!encodedData && !token) {
+      setError('No access credentials provided. Please use the link from your invitation email.');
       setLoading(false);
       return;
     }
 
     loadJudgeData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [encodedData, token]);
 
   const loadJudgeData = () => {
-    const allJudges = [];
-    const eventKeys = Object.keys(localStorage).filter(key => key.startsWith('judges_'));
+    let foundJudge = null;
+    let assigned = [];
 
-    eventKeys.forEach(key => {
-      const eventJudges = JSON.parse(localStorage.getItem(key) || '[]');
-      allJudges.push(...eventJudges.map(j => ({ ...j, eventId: key.replace('judges_', '') })));
-    });
+    // First, try to decode data from URL (self-contained link)
+    if (encodedData) {
+      const decodedData = decodeJudgeData(encodedData);
+      if (decodedData) {
+        foundJudge = decodedData;
+        assigned = decodedData.assignedTeams || [];
+      }
+    }
 
-    const foundJudge = allJudges.find(j => j.token === token);
+    // Fallback: Try to get judge from global registry
+    if (!foundJudge && token) {
+      const judgesRegistry = JSON.parse(localStorage.getItem('judgesRegistry') || '{}');
+      foundJudge = judgesRegistry[token];
+
+      // Fallback: search through event-specific storage
+      if (!foundJudge) {
+        const allJudges = [];
+        const eventKeys = Object.keys(localStorage).filter(key => key.startsWith('judges_'));
+
+        eventKeys.forEach(key => {
+          const eventJudges = JSON.parse(localStorage.getItem(key) || '[]');
+          allJudges.push(...eventJudges.map(j => ({ ...j, eventId: key.replace('judges_', '') })));
+        });
+
+        foundJudge = allJudges.find(j => j.token === token);
+      }
+
+      if (foundJudge) {
+        // Use eventId from URL if available, otherwise use judge's eventId
+        const actualEventId = eventId || foundJudge.eventId;
+
+        const eventTeams = JSON.parse(localStorage.getItem(`teams_${actualEventId}`) || '[]');
+        assigned = eventTeams.filter(team =>
+          (foundJudge.assignedTeams || []).includes(team.id)
+        );
+      }
+    }
 
     if (!foundJudge) {
-      setError('Invalid access token. Please check your invitation link.');
+      setError('Invalid access credentials. Please check your invitation link or contact the event administrator.');
       setLoading(false);
       return;
     }
 
     setJudge(foundJudge);
-
-    const eventTeams = JSON.parse(localStorage.getItem(`teams_${foundJudge.eventId}`) || '[]');
-    const assigned = eventTeams.filter(team =>
-      (foundJudge.assignedTeams || []).includes(team.id)
-    );
     setAssignedTeams(assigned);
 
     const savedScores = JSON.parse(localStorage.getItem(`scores_${foundJudge.id}`) || '{}');

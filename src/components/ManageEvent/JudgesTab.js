@@ -31,6 +31,7 @@ import {
   Delete as DeleteIcon,
   Send as SendIcon,
 } from "@mui/icons-material";
+import { createJudgeLink } from "../../utils/judgeDataEncoder";
 
 function JudgesTab({ judges, venues, categories = [], teams = [], onJudgesChange, eventId, eventName }) {
   const [openDialog, setOpenDialog] = useState(false);
@@ -70,15 +71,19 @@ function JudgesTab({ judges, venues, categories = [], teams = [], onJudgesChange
 
   const handleSendInvitation = async (judge) => {
     try {
-      const dashboardUrl = `${window.location.origin}/judge-dashboard`;
-      const fullUrl = `${dashboardUrl}?token=${judge.token}`;
+      const fullUrl = createJudgeLink(judge, eventId, eventName, teams);
+
+      if (!fullUrl) {
+        alert('Error creating invitation link. Please try again.');
+        return;
+      }
 
       const updatedJudges = judges.map((j) =>
         j.id === judge.id ? { ...j, invitationSent: true, invitationSentAt: new Date().toISOString() } : j
       );
       onJudgesChange(updatedJudges);
 
-      const emailBody = `Dear ${judge.name},\n\nYou have been invited to judge the event: ${eventName}\n\nPlease use the link below to access your judging dashboard:\n${fullUrl}\n\nYour access token: ${judge.token}\n\nBest regards,\nEvent Management Team`;
+      const emailBody = `Dear ${judge.name},\n\nYou have been invited to judge the event: ${eventName}\n\nPlease use the link below to access your judging dashboard:\n${fullUrl}\n\nIMPORTANT: Keep this link safe as it contains your unique access credentials and assigned teams. This link will work on any device.\n\nBest regards,\nEvent Management Team`;
 
       const mailtoLink = `mailto:${judge.email}?subject=Judge Invitation - ${encodeURIComponent(eventName)}&body=${encodeURIComponent(emailBody)}`;
 
@@ -95,7 +100,7 @@ function JudgesTab({ judges, venues, categories = [], teams = [], onJudgesChange
 
       const copied = await copyToClipboard();
 
-      alert(`Invitation prepared for ${judge.email}\n\n${copied ? 'Dashboard link copied to clipboard!' : 'Dashboard Link:'}\n${fullUrl}\n\nYour default email client should open with a pre-filled message.`);
+      alert(`Invitation prepared for ${judge.email}\n\n${copied ? 'Dashboard link copied to clipboard!' : 'Dashboard Link:'}\n${fullUrl}\n\nYour default email client should open with a pre-filled message.\n\nIMPORTANT: This link contains all necessary data and will work on any device.`);
     } catch (error) {
       console.error('Error sending invitation:', error);
       alert('Failed to send invitation. Please try again.');
